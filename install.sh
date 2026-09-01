@@ -9,6 +9,8 @@ source "$SOURCE_DIR/lib/common.sh"
 source "$SOURCE_DIR/lib/preflight.sh"
 # shellcheck source=lib/docker.sh
 source "$SOURCE_DIR/lib/docker.sh"
+# shellcheck source=lib/upgrades.sh
+source "$SOURCE_DIR/lib/upgrades.sh"
 # shellcheck source=lib/restore.sh
 source "$SOURCE_DIR/lib/restore.sh"
 # shellcheck source=lib/adguard.sh
@@ -31,6 +33,7 @@ main() {
   fi
 
   install_docker
+  configure_unattended_upgrades
   configure_sysctl
   disable_legacy_wireguard_service
   prepare_service_directories

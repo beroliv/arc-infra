@@ -1,7 +1,7 @@
 # Arc infrastructure appliance
 
 Production installer for the Arc Raspberry Pi appliance: AdGuard Home, wg-easy v15,
-Docker Engine and an nftables firewall on Debian 13 arm64.
+Docker Engine, unattended Debian upgrades and an nftables firewall on Debian 13 arm64.
 
 ## Install
 
@@ -45,15 +45,18 @@ The ordering is a safety invariant, not merely an implementation detail:
    read-only at `/mnt/infra-recovery`.
 3. Validate both recovery artifacts before making service changes.
 4. Install Docker Engine and Compose from Docker's official Debian repository.
-5. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
-6. Create the `/opt` directories and both production Compose definitions.
-7. Restore AdGuard configuration and the sensitive wg-easy database into their final
+5. Configure daily package-list refresh and unattended Debian stable/security updates
+   without automatic reboots.
+6. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
+7. Create the `/opt` directories and both production Compose definitions.
+8. Restore AdGuard configuration and the sensitive wg-easy database into their final
    bind mounts.
-8. Validate the restored files again.
-9. Syntax-check and load the host nftables policy.
-10. Start AdGuard and only then start wg-easy from its restored database.
-11. Validate containers, sockets, DNS, HTTP, `wg0`, port and all nine peers.
-12. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
+9. Validate the restored files again.
+10. Syntax-check and load the host nftables policy.
+11. Start AdGuard and only then start wg-easy from its restored database.
+12. Validate upgrades, firewall rules, containers, sockets, DNS, HTTP, `wg0`, port and
+    all nine peers.
+13. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
     unmount a recovery filesystem mounted by the installer.
 
 wg-easy is never started before `/opt/wg-easy/data/wg-easy.db` is non-empty. It is
@@ -71,15 +74,22 @@ Both containers use host networking. There are no Docker `ports:` mappings.
 | nftables | `/etc/nftables.conf` | Host input, forwarding and NAT |
 | sysctl | `/etc/sysctl.d/90-wireguard.conf` | IPv4 forwarding and source mark |
 
-The host firewall permits DNS from the LAN and VPN, SSH from the LAN and VPN, and
-WireGuard on `eth0`. The wg-easy UI is reachable only from Nova (`192.168.0.195`),
-which terminates `https://wg-easy2.lan`. VPN clients may reach Nova on TCP 443 and the
+The authoritative host nftables firewall permits DNS from the LAN and VPN, SSH from
+the LAN and VPN, and WireGuard on `eth0`. The wg-easy UI on TCP 51821 is directly
+reachable from `192.168.0.0/24` for maintenance and recovery; Nova still terminates
+`https://wg-easy2.lan`. VPN clients may reach Nova (`192.168.0.195`) on TCP 443 and the
 public Internet, but other private, carrier-grade NAT and link-local IPv4 ranges are
-blocked. The host masquerades `10.8.0.0/24` through `eth0`.
+blocked. The host masquerades `10.8.0.0/24` through `eth0`. There are no 51820 redirect
+rules and no 5335 rules.
 
 Arc does not install Caddy, PiVPN, Unbound, or `wg-quick@wg0.service`. wg-easy creates
 `wg0` from its v15 database; host nftables owns VPN filtering and NAT. IPv6 is not
 blindly disabled, so restored wg-easy state may continue to use it.
+
+Arc installs Debian stable and security updates automatically through
+`unattended-upgrades`. Package lists and unattended upgrades run daily. Automatic
+reboots are explicitly disabled, so kernel or other reboot-requiring updates remain
+pending until an administrator deliberately reboots Arc.
 
 See [SPECIFICATION.md](SPECIFICATION.md) for the fixed addresses and security
 invariants.
@@ -152,6 +162,7 @@ lib/
   firewall.sh
   preflight.sh
   restore.sh
+  upgrades.sh
   validate.sh
   wg-easy.sh
 README.md

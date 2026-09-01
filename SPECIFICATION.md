@@ -5,7 +5,8 @@
 Arc is a Raspberry Pi / arm64 appliance running Debian 13. It provides AdGuard Home
 DNS and an existing wg-easy v15 WireGuard deployment. Docker provides lifecycle and
 process isolation; the host owns packet filtering, forwarding and NAT through
-nftables.
+nftables. Debian security and stable updates are installed unattended without an
+automatic reboot.
 
 This repository does not configure the host's static address. The host must already
 have the intended address and interface before installation.
@@ -85,7 +86,9 @@ No Compose `ports:` entries are allowed with host networking.
 
 The managed `inet arc_filter` table has default-drop input and forward chains.
 Input accepts established/related traffic, loopback, IPv4 and IPv6 ICMP, LAN/VPN SSH,
-LAN/VPN DNS, WireGuard UDP on `eth0`, and the wg-easy UI only from Nova.
+LAN/VPN DNS, WireGuard UDP 51825 on `eth0`, and the wg-easy UI on TCP 51821 from
+`192.168.0.0/24` for direct maintenance and recovery. It contains no TCP/UDP 51820
+rule, no 51825-to-51820 redirect, and no TCP/UDP 5335 rule.
 
 Forwarding accepts established/related flows, then applies this ordered VPN policy:
 
@@ -98,6 +101,21 @@ The `ip arc_nat` table masquerades `10.8.0.0/24` through `eth0`. The configurati
 syntax-checked before installation and does not flush or mutate Docker-managed tables.
 The installer refuses to activate the policy from an SSH source outside the intended
 LAN or VPN ranges.
+
+Host nftables is authoritative. wg-easy does not own Arc filtering or NAT and does not
+depend on legacy iptables PostUp/PostDown rules. The ordered exception permits VPN
+clients to reach Nova HTTPS at `192.168.0.195:443`; the following drops prevent other
+private/local access, while the final accept and NAT rule retain normal Internet
+access.
+
+## Unattended upgrades
+
+The installer installs `unattended-upgrades` and `apt-listchanges`. The managed
+`/etc/apt/apt.conf.d/20auto-upgrades` enables daily package-list refresh and unattended
+installation. `/etc/apt/apt.conf.d/52arc-unattended-upgrades` limits the managed
+origins to the current Debian stable and security suites and explicitly sets
+`Unattended-Upgrade::Automatic-Reboot "false";`. Reconciliation replaces these managed
+files instead of appending duplicate entries.
 
 ## Persistent kernel configuration
 
@@ -113,8 +131,10 @@ IPv6 interface address if it expects one.
 
 ## Successful-install criteria
 
-Installation succeeds only when Docker and nftables are active and enabled, both
-containers run, `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine
-peers exist by default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP
-response, a local DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is
-not enabled, and the restored database remains non-empty.
+Installation succeeds only when Docker and nftables are active and enabled, unattended
+upgrades and package refresh are enabled without automatic reboot, the effective
+firewall contains the required ordered input/forward/NAT policy, both containers run,
+`wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
+default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP response, a local
+DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is not enabled, and
+the restored database remains non-empty.

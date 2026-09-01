@@ -25,7 +25,7 @@ table inet arc_filter {
     iifname "wg0" udp dport 53 accept
     iifname "wg0" tcp dport 53 accept
     iifname "${ARC_LAN_INTERFACE}" udp dport ${WG_PORT} accept
-    ip saddr ${NOVA_IP} tcp dport ${WG_UI_PORT} accept
+    iifname "${ARC_LAN_INTERFACE}" ip saddr ${ARC_LAN_CIDR} tcp dport ${WG_UI_PORT} accept
   }
 
   chain forward {
@@ -57,11 +57,11 @@ table ip arc_nat {
 EOF
 
   nft -c -f "$candidate" || die "generated nftables configuration failed syntax validation"
-  if [[ -e /etc/nftables.conf ]]; then
+  if [[ -e /etc/nftables.conf ]] && ! cmp --silent -- "$candidate" /etc/nftables.conf; then
     backup="/etc/nftables.conf.arc-infra-backup.$(date +%Y%m%d%H%M%S)"
     cp -a -- /etc/nftables.conf "$backup"
   fi
-  install -m 0644 "$candidate" /etc/nftables.conf
+  install_file_if_changed "$candidate" /etc/nftables.conf 0644
   rm -f -- "$candidate"
 
   if ! nft -f /etc/nftables.conf; then
