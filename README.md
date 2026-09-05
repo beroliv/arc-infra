@@ -99,6 +99,14 @@ Interactive SSH and console logins automatically show the repository-managed
 uptime, load, disk, RAM, Raspberry Pi temperature when available, the three managed
 host services, the two expected Docker containers, and non-sensitive `wg0` state.
 
+Arc intentionally keeps `/etc/motd` empty so Debian's generic legal/warranty banner
+does not duplicate the infrastructure status. On Raspberry Pi OS, the installer
+disables only `/etc/profile.d/wifi-check.sh` by moving it outside the `*.sh` login
+script set; this suppresses the irrelevant rfkill/Wi-Fi-country warning without
+enabling or configuring Wi-Fi. PAM MOTD remains active and OpenSSH's useful
+`Last login` line remains enabled. Other Debian and Raspberry Pi login components are
+left unchanged.
+
 Because unattended upgrades never reboot Arc automatically, the MOTD prominently
 shows `required` whenever `/run/reboot-required` exists. Otherwise it shows
 `not required`. WireGuard reporting is limited to interface state, expected address,
@@ -115,8 +123,10 @@ Run the same one-line command again. When `/opt/arc-infra/.installed` exists, th
 installer requires the existing AdGuard YAML and wg-easy database and preserves both.
 It does not require or copy from the recovery filesystem, regenerate identities, or
 delete service state. It reconciles packages, Compose definitions, sysctl, firewall,
-the repository MOTD, containers and validations. A rerun replaces the installed MOTD
-when the repository version changes and reasserts root ownership and mode `0755`.
+the repository MOTD and login-noise policy, containers and validations. A rerun
+replaces the installed MOTD when the repository version changes, reasserts root
+ownership and mode `0755`, keeps `/etc/motd` empty, and disables a package update's
+recreated `wifi-check.sh` again without duplicating changes.
 
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.

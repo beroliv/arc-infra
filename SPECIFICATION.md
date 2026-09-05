@@ -139,6 +139,16 @@ unavailable/not-installed state and never fail login. The script has no network 
 and only invokes WireGuard subcommands that return the listen port or peer identifiers
 for counting; it never prints their output or any key.
 
+The installer manages `/etc/motd` as an empty root-owned `0644` file, suppressing the
+redundant Debian legal/warranty banner while leaving PAM's dynamic MOTD execution
+enabled. Raspberry Pi's Ethernet-only Arc role makes its Wi-Fi-country warning
+irrelevant, so `/etc/profile.d/wifi-check.sh` is moved to
+`wifi-check.sh.disabled-by-arc-infra`. If a package later recreates a different source
+file, the rerun preserves that version with a timestamped disabled name. The installer
+does not unblock Wi-Fi, set a regulatory country, or alter other Raspberry Pi
+components. OpenSSH `PrintLastLog` remains enabled, so the normal `Last login` line is
+shown before the Arc status page.
+
 ## Persistent kernel configuration
 
 `/etc/sysctl.d/90-wireguard.conf` enables:
@@ -156,7 +166,9 @@ IPv6 interface address if it expects one.
 Installation succeeds only when Docker and nftables are active and enabled, unattended
 upgrades and package refresh are enabled without automatic reboot, the installed MOTD
 matches the repository version, is executable, root-owned and exits successfully, the
-effective firewall contains the required ordered input/forward/NAT policy, both containers run,
+static MOTD is empty, the Pi Wi-Fi warning script is disabled, PAM dynamic MOTD and
+OpenSSH Last login remain enabled, the effective firewall contains the required ordered
+input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
 default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP response, a local
 DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is not enabled, and
