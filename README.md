@@ -114,6 +114,17 @@ listen port, and peer count; no keys, peer configurations, environment variables
 container configuration are displayed. The script performs no network calls and
 degrades cleanly when an optional command or service is unavailable.
 
+The same status page can be displayed at any time from a normal admin shell:
+
+```bash
+motd
+```
+
+The root-owned `/usr/local/bin/motd` command is a minimal executable wrapper around
+`/etc/update-motd.d/10-infra-status`; it contains no duplicated status logic. The
+installer verifies `/usr/local/bin` in the admin user's login PATH and adds it through
+a system-wide `/etc/profile.d` entry only when the standard login environment lacks it.
+
 See [SPECIFICATION.md](SPECIFICATION.md) for the fixed addresses and security
 invariants.
 
@@ -125,8 +136,9 @@ It does not require or copy from the recovery filesystem, regenerate identities,
 delete service state. It reconciles packages, Compose definitions, sysctl, firewall,
 the repository MOTD and login-noise policy, containers and validations. A rerun
 replaces the installed MOTD when the repository version changes, reasserts root
-ownership and mode `0755`, keeps `/etc/motd` empty, and disables a package update's
-recreated `wifi-check.sh` again without duplicating changes.
+ownership and mode `0755`, reconciles the `/usr/local/bin/motd` wrapper, keeps
+`/etc/motd` empty, and disables a package update's recreated `wifi-check.sh` again
+without aliases, user shell changes, or duplicate entries.
 
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.

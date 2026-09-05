@@ -139,6 +139,13 @@ unavailable/not-installed state and never fail login. The script has no network 
 and only invokes WireGuard subcommands that return the listen port or peer identifiers
 for counting; it never prints their output or any key.
 
+`/usr/local/bin/motd` is installed root-owned with mode `0755` and contains only an
+`exec /etc/update-motd.d/10-infra-status` handoff. Thus `motd` from an admin login shell
+renders the identical repository-managed page and preserves its exit status without
+duplicating logic or requiring an alias. The installer tests the normal admin user's
+fresh login PATH. It creates `/etc/profile.d/arc-local-bin.sh` only when
+`/usr/local/bin` is genuinely absent; no user-specific startup file is modified.
+
 The installer manages `/etc/motd` as an empty root-owned `0644` file, suppressing the
 redundant Debian legal/warranty banner while leaving PAM's dynamic MOTD execution
 enabled. Raspberry Pi's Ethernet-only Arc role makes its Wi-Fi-country warning
@@ -166,9 +173,10 @@ IPv6 interface address if it expects one.
 Installation succeeds only when Docker and nftables are active and enabled, unattended
 upgrades and package refresh are enabled without automatic reboot, the installed MOTD
 matches the repository version, is executable, root-owned and exits successfully, the
-static MOTD is empty, the Pi Wi-Fi warning script is disabled, PAM dynamic MOTD and
-OpenSSH Last login remain enabled, the effective firewall contains the required ordered
-input/forward/NAT policy, both containers run,
+system-wide `motd` wrapper is root-owned, executable, correct and callable from the
+admin login PATH, the static MOTD is empty, the Pi Wi-Fi warning script is disabled,
+PAM dynamic MOTD and OpenSSH Last login remain enabled, the effective firewall contains
+the required ordered input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
 default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP response, a local
 DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is not enabled, and
