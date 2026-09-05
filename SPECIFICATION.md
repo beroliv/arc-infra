@@ -23,6 +23,7 @@ have the intended address and interface before installation.
 | WireGuard server address | `10.8.0.1/24` |
 | WireGuard UDP port | `51825` |
 | wg-easy UI | TCP `51821` |
+| AdGuard Home UI | TCP `3000` |
 | WireGuard server MTU | `1420` in restored state |
 | Existing client MTU | `1200` in existing client state |
 
@@ -89,8 +90,11 @@ No Compose `ports:` entries are allowed with host networking.
 The managed `inet arc_filter` table has default-drop input and forward chains.
 Input accepts established/related traffic, loopback, IPv4 and IPv6 ICMP, LAN/VPN SSH,
 LAN/VPN DNS, WireGuard UDP 51825 on `eth0`, and the wg-easy UI on TCP 51821 from
-`192.168.0.0/24` for direct maintenance and recovery. It contains no TCP/UDP 51820
-rule, no 51825-to-51820 redirect, and no TCP/UDP 5335 rule.
+`192.168.0.0/24` for direct maintenance and recovery. AdGuard Home's UI is similarly
+available only from `192.168.0.0/24` on TCP 3000. These management ports are not
+available from WireGuard or globally; DNS remains available to LAN and VPN clients on
+TCP/UDP 53. The input chain contains no TCP/UDP 51820 rule, no 51825-to-51820 redirect,
+and no TCP/UDP 5335 rule.
 
 Forwarding accepts established/related flows, then applies this ordered VPN policy:
 
@@ -178,6 +182,7 @@ admin login PATH, the static MOTD is empty, the Pi Wi-Fi warning script is disab
 PAM dynamic MOTD and OpenSSH Last login remain enabled, the effective firewall contains
 the required ordered input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
-default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP response, a local
-DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is not enabled, and
-the restored database remains non-empty.
+default, TCP 51821, TCP 3000 and TCP/UDP 53 listen, the effective `arc_filter` input
+chain contains exactly one LAN-scoped TCP 3000 accept rule and no global equivalent,
+wg-easy returns a local HTTP response, a local DNS query succeeds, port 5335 is unused,
+the legacy wg-quick unit is not enabled, and the restored database remains non-empty.

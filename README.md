@@ -70,7 +70,7 @@ Both containers use host networking. There are no Docker `ports:` mappings.
 
 | Component | Persistent state | Host endpoints |
 | --- | --- | --- |
-| AdGuard Home | `/opt/adguard/work`, `/opt/adguard/conf` | TCP/UDP 53 |
+| AdGuard Home | `/opt/adguard/work`, `/opt/adguard/conf` | TCP/UDP 53, TCP 3000 |
 | wg-easy 15 | `/opt/wg-easy/data` mounted at `/etc/wireguard` | UDP 51825, TCP 51821 |
 | nftables | `/etc/nftables.conf` | Host input, forwarding and NAT |
 | sysctl | `/etc/sysctl.d/90-wireguard.conf` | IPv4 forwarding and source mark |
@@ -82,6 +82,12 @@ reachable from `192.168.0.0/24` for maintenance and recovery; Nova still termina
 public Internet, but other private, carrier-grade NAT and link-local IPv4 ranges are
 blocked. The host masquerades `10.8.0.0/24` through `eth0`. There are no 51820 redirect
 rules and no 5335 rules.
+
+AdGuard Home's Web UI is directly available to LAN clients at
+`http://192.168.0.193:3000`. AdGuard TCP 3000 and wg-easy TCP 51821 are management
+ports restricted to source network `192.168.0.0/24`; neither is opened to WireGuard or
+the public Internet. DNS remains available to both LAN and WireGuard clients on
+TCP/UDP 53.
 
 Arc does not install Caddy, PiVPN, Unbound, or `wg-quick@wg0.service`. wg-easy creates
 `wg0` from its v15 database; host nftables owns VPN filtering and NAT. IPv6 is not

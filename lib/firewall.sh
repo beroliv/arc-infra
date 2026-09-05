@@ -26,6 +26,7 @@ table inet arc_filter {
     iifname "wg0" tcp dport 53 accept
     iifname "${ARC_LAN_INTERFACE}" udp dport ${WG_PORT} accept
     iifname "${ARC_LAN_INTERFACE}" ip saddr ${ARC_LAN_CIDR} tcp dport ${WG_UI_PORT} accept
+    iifname "${ARC_LAN_INTERFACE}" ip saddr ${ARC_LAN_CIDR} tcp dport 3000 accept
   }
 
   chain forward {

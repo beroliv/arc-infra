@@ -40,8 +40,9 @@ validate_unattended_upgrades() {
 }
 
 validate_firewall() {
-  local filter_rules nat_rules managed_rules exception_line internet_line range block_line
+  local filter_rules input_rules nat_rules managed_rules exception_line internet_line range block_line
   filter_rules="$(nft list table inet arc_filter)"
+  input_rules="$(nft list chain inet arc_filter input)"
   nat_rules="$(nft list table ip arc_nat)"
   managed_rules="${filter_rules}"$'\n'"${nat_rules}"
 
@@ -59,6 +60,10 @@ validate_firewall() {
     || die "firewall lacks WireGuard UDP 51825 input"
   grep -Eq 'ip saddr 192\.168\.0\.0/24 tcp dport 51821 accept' <<<"$filter_rules" \
     || die "firewall lacks LAN wg-easy UI access"
+  grep -Eq 'iifname "eth0" ip saddr 192\.168\.0\.0/24 tcp dport 3000 accept' <<<"$input_rules" \
+    || die "firewall lacks LAN-only AdGuard UI access"
+  [[ "$(grep -Ec 'tcp dport 3000 accept' <<<"$input_rules")" -eq 1 ]] \
+    || die "firewall contains an additional or global TCP 3000 accept rule"
   ! grep -Eq '(dport (5335|51820)|redirect.*51820)' <<<"$managed_rules" \
     || die "firewall contains an obsolete 5335 or 51820 rule"
 
@@ -99,6 +104,7 @@ validate_installation() {
   [[ "$peer_count" == "$EXPECTED_WG_PEERS" ]] || die "wg0 has $peer_count peers; expected $EXPECTED_WG_PEERS"
 
   ss -H -ltn "sport = :$WG_UI_PORT" | grep -q . || die "TCP $WG_UI_PORT is not listening"
+  ss -H -ltn "sport = :3000" | grep -q . || die "AdGuard UI TCP 3000 is not listening"
   ss -H -lun "sport = :$WG_PORT" | grep -q . || die "UDP $WG_PORT is not listening"
   ss -H -ltn "sport = :53" | grep -q . || die "TCP 53 is not listening"
   ss -H -lun "sport = :53" | grep -q . || die "UDP 53 is not listening"
