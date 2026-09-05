@@ -13,6 +13,7 @@ install_motd() {
     chmod 0755 "$target"
   fi
 
+  install_motd_sudoers
   install_motd_command
   ensure_usr_local_bin_in_login_path
   suppress_static_motd
@@ -24,7 +25,7 @@ install_motd_command() {
   candidate="$(mktemp)"
   cat >"$candidate" <<'EOF'
 #!/usr/bin/env bash
-exec /etc/update-motd.d/10-infra-status
+exec sudo -n /etc/update-motd.d/10-infra-status
 EOF
   install -d -o root -g root -m 0755 /usr/local/bin
   if [[ ! -e "$target" ]] || ! cmp --silent -- "$candidate" "$target"; then
@@ -34,6 +35,29 @@ EOF
     chmod 0755 "$target"
   fi
   rm -f -- "$candidate"
+}
+
+install_motd_sudoers() {
+  local admin_user candidate target="/etc/sudoers.d/arc-motd"
+  command -v sudo >/dev/null 2>&1 || die "sudo is required for the manual motd command"
+  command -v visudo >/dev/null 2>&1 || die "visudo is required to validate the Arc MOTD permission"
+  admin_user="$(find_admin_user)"
+  [[ "$admin_user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
+    || die "could not identify a safe admin username for the Arc MOTD permission"
+
+  candidate="$(mktemp)"
+  printf '%s ALL=(root) NOPASSWD: /etc/update-motd.d/10-infra-status\n' \
+    "$admin_user" >"$candidate"
+  chmod 0440 "$candidate"
+  if ! visudo -cf "$candidate" >/dev/null; then
+    rm -f -- "$candidate"
+    die "generated Arc MOTD sudoers rule is invalid"
+  fi
+
+  install -d -o root -g root -m 0755 /etc/sudoers.d
+  install -o root -g root -m 0440 -- "$candidate" "$target"
+  rm -f -- "$candidate"
+  visudo -cf "$target" >/dev/null || die "installed Arc MOTD sudoers rule is invalid"
 }
 
 find_admin_user() {
@@ -104,20 +128,38 @@ validate_motd() {
   local source="$SOURCE_DIR/10-infra-status"
   local target="/etc/update-motd.d/10-infra-status"
   local command_target="/usr/local/bin/motd"
-  local admin_user login_path
+  local sudoers_target="/etc/sudoers.d/arc-motd"
+  local admin_user login_path manual_output plain_output expected_sudoers
   [[ -x "$target" ]] || die "Arc MOTD is missing or not executable"
-  [[ "$(stat -c '%U:%G' "$target")" == "root:root" ]] || die "Arc MOTD is not owned by root"
+  [[ "$(stat -c '%U:%G:%a' "$target")" == "root:root:755" ]] \
+    || die "Arc MOTD ownership or permissions are incorrect"
   cmp --silent -- "$source" "$target" || die "installed Arc MOTD differs from repository version"
   "$target" >/dev/null 2>&1 || die "Arc MOTD does not execute successfully"
   [[ -x "$command_target" ]] || die "system-wide motd command is missing or not executable"
   [[ "$(stat -c '%U:%G:%a' "$command_target")" == "root:root:755" ]] \
     || die "system-wide motd command ownership or permissions are incorrect"
-  printf '%s\n' '#!/usr/bin/env bash' 'exec /etc/update-motd.d/10-infra-status' \
+  printf '%s\n' '#!/usr/bin/env bash' 'exec sudo -n /etc/update-motd.d/10-infra-status' \
     | cmp --silent -- - "$command_target" \
     || die "system-wide motd command does not invoke the Arc MOTD"
-  "$command_target" >/dev/null 2>&1 || die "system-wide motd command failed"
   admin_user="$(find_admin_user)"
   [[ -n "$admin_user" ]] || die "could not identify a normal admin user for login PATH validation"
+  expected_sudoers="$admin_user ALL=(root) NOPASSWD: /etc/update-motd.d/10-infra-status"
+  [[ "$(stat -c '%U:%G:%a' "$sudoers_target")" == "root:root:440" ]] \
+    || die "Arc MOTD sudoers ownership or permissions are incorrect"
+  grep -Fqx -- "$expected_sudoers" "$sudoers_target" \
+    || die "Arc MOTD sudoers permission is not narrowly scoped to the admin user"
+  visudo -cf "$sudoers_target" >/dev/null || die "Arc MOTD sudoers permission is invalid"
+  runuser -u "$admin_user" -- sudo -n "$target" >/dev/null 2>&1 \
+    || die "admin cannot execute the Arc MOTD through non-interactive sudo"
+  if ! manual_output="$(runuser -u "$admin_user" -- "$command_target" 2>/dev/null)"; then
+    die "manual motd command failed for $admin_user"
+  fi
+  plain_output="$(sed $'s/\033\\[[0-9;]*m//g' <<<"$manual_output")"
+  grep -Fqx '  Interface:  wg0 up' <<<"$plain_output" \
+    && grep -Fqx "  Address:    $WG_ADDRESS" <<<"$plain_output" \
+    && grep -Fqx "  Port:       $WG_PORT" <<<"$plain_output" \
+    && grep -Fqx "  Peers:      $EXPECTED_WG_PEERS/$EXPECTED_WG_PEERS" <<<"$plain_output" \
+    || die "manual motd command did not report the expected WireGuard state"
   login_path="$(get_login_path "$admin_user")"
   [[ ":$login_path:" == *:/usr/local/bin:* ]] \
     || die "/usr/local/bin is missing from the normal admin login PATH"

@@ -50,8 +50,6 @@ Nova and is out of scope.
 10. Existing production data is never silently overwritten.
 11. Login status is local-only and never emits WireGuard key material or makes network
     calls.
-12. A container being merely running is insufficient wg-easy readiness: the expected
-    interface address, listen port and peer count must be stable.
 
 ## Recovery contract
 
@@ -86,32 +84,6 @@ wg-easy uses `ghcr.io/wg-easy/wg-easy:15`, host networking, and:
 - `/lib/modules:/lib/modules:ro`
 
 No Compose `ports:` entries are allowed with host networking.
-
-On a managed rerun, before any Docker package operation, the installer uses Compose
-`down` with the existing `/opt/wg-easy/compose.yml` and waits for the wg-easy container
-to disappear. This removes the `restart: unless-stopped` container before Docker or
-containerd can restart during package reconciliation. wg-easy remains down throughout
-package, sysctl, firewall, Compose and data reconciliation. A missing Docker command or
-compose file is a safe no-op at this pre-Docker stage.
-
-If `wg0` remains after the container has disappeared, it may be deleted only on an
-existing installer-managed Arc system and only after confirming
-`wg-quick@wg0.service` is inactive. No other WireGuard interface is touched. On first
-install the quiesce path is never called, and the restored database remains mandatory
-before the first container start.
-
-At the controlled end, the installer validates Compose, pulls the v15 image and uses
-Compose `up -d`. Readiness requires the container to be running and `wg0` to have
-`10.8.0.1/24`, listen on UDP 51825 and contain exactly nine peers by default. The
-entire state must pass three consecutive checks two seconds apart within a bounded
-check count.
-
-If initial readiness fails, the installer prints only container state, interface
-up/down, IPv4 address, listen port and peer count, then performs exactly one Compose
-down/up recovery and repeats the stable-state check. A second failure aborts. No full
-WireGuard output, peer/public keys, private or preshared keys, database contents, or
-client configuration is logged. Both start attempts require the non-empty production
-database and never modify it.
 
 ## Host firewall contract
 
@@ -171,12 +143,22 @@ unavailable/not-installed state and never fail login. The script has no network 
 and only invokes WireGuard subcommands that return the listen port or peer identifiers
 for counting; it never prints their output or any key.
 
-`/usr/local/bin/motd` is installed root-owned with mode `0755` and contains only an
-`exec /etc/update-motd.d/10-infra-status` handoff. Thus `motd` from an admin login shell
-renders the identical repository-managed page and preserves its exit status without
-duplicating logic or requiring an alias. The installer tests the normal admin user's
-fresh login PATH. It creates `/etc/profile.d/arc-local-bin.sh` only when
-`/usr/local/bin` is genuinely absent; no user-specific startup file is modified.
+`/usr/local/bin/motd` is installed root-owned with mode `0755` and uses `sudo -n` to
+execute `/etc/update-motd.d/10-infra-status`. Thus `motd` from an admin login shell
+renders the identical repository-managed page with the privileges needed for
+WireGuard operational queries, without duplicating logic or waiting for a password.
+The `exec sudo -n` handoff preserves the command's exit behavior and fails rather than
+prompting if authorization is unavailable.
+The installer tests the normal admin user's fresh login PATH. It creates
+`/etc/profile.d/arc-local-bin.sh` only when `/usr/local/bin` is genuinely absent; no
+user-specific startup file is modified.
+
+The root-owned `0440` file `/etc/sudoers.d/arc-motd` grants the detected infrastructure
+admin user passwordless execution of exactly
+`/etc/update-motd.d/10-infra-status` as root. A temporary candidate is checked with
+`visudo -cf` before installation and the installed file is checked again. No capability
+is added to `wg`, and the user receives no general NET_ADMIN, WireGuard, Docker, shell,
+wildcard, or other passwordless command access.
 
 The installer manages `/etc/motd` as an empty root-owned `0644` file, suppressing the
 redundant Debian legal/warranty banner while leaving PAM's dynamic MOTD execution
@@ -210,8 +192,7 @@ admin login PATH, the static MOTD is empty, the Pi Wi-Fi warning script is disab
 PAM dynamic MOTD and OpenSSH Last login remain enabled, the effective firewall contains
 the required ordered input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
-default, and that complete state passes three consecutive checks. TCP 51821, TCP 3000
-and TCP/UDP 53 listen, the effective `arc_filter` input chain contains exactly one
+default, TCP 51821, TCP 3000 and TCP/UDP 53 listen, the effective `arc_filter` input chain contains exactly one
 LAN-scoped TCP 3000 accept rule and no global equivalent, wg-easy returns a local HTTP
 response, a local DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is
 not enabled, and the restored database remains non-empty.

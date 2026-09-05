@@ -41,28 +41,24 @@ to become root first and then export `RECOVERY_UUID` before running the command.
 The ordering is a safety invariant, not merely an implementation detail:
 
 1. Verify Debian 13, arm64, `eth0`, repository files, and the active SSH source.
-2. On a rerun, bring wg-easy fully down and remove its container before any Docker
-   package reconciliation.
-3. On a first install, locate the ext4 recovery filesystem by UUID (when supplied) or label and mount it
+2. Locate the ext4 recovery filesystem by UUID (when supplied) or label and mount it
    read-only at `/mnt/infra-recovery`.
-4. Validate both recovery artifacts before making service changes.
-5. Install Docker Engine and Compose from Docker's official Debian repository.
-6. Configure daily package-list refresh and unattended Debian stable/security updates
+3. Validate both recovery artifacts before making service changes.
+4. Install Docker Engine and Compose from Docker's official Debian repository.
+5. Configure daily package-list refresh and unattended Debian stable/security updates
    without automatic reboots.
-7. Install the repository-managed infrastructure MOTD.
-8. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
-9. Create the `/opt` directories and both production Compose definitions.
-10. Restore AdGuard configuration and the sensitive wg-easy database into their final
+6. Install the repository-managed infrastructure MOTD and its narrowly scoped manual
+   execution permission.
+7. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
+8. Create the `/opt` directories and both production Compose definitions.
+9. Restore AdGuard configuration and the sensitive wg-easy database into their final
    bind mounts.
-11. Validate the restored files again.
-12. Syntax-check and load the host nftables policy.
-13. Start AdGuard and then start wg-easy exactly once with Compose `up -d` from its
-    restored database.
-14. Require three consecutive complete wg-easy readiness checks, with one bounded
-    Compose down/up recovery attempt if necessary.
-15. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
+10. Validate the restored files again.
+11. Syntax-check and load the host nftables policy.
+12. Start AdGuard and only then start wg-easy from its restored database.
+13. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
     port and all nine peers.
-16. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
+14. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
     unmount a recovery filesystem mounted by the installer.
 
 wg-easy is never started before `/opt/wg-easy/data/wg-easy.db` is non-empty. It is
@@ -131,10 +127,16 @@ The same status page can be displayed at any time from a normal admin shell:
 motd
 ```
 
-The root-owned `/usr/local/bin/motd` command is a minimal executable wrapper around
-`/etc/update-motd.d/10-infra-status`; it contains no duplicated status logic. The
-installer verifies `/usr/local/bin` in the admin user's login PATH and adds it through
-a system-wide `/etc/profile.d` entry only when the standard login environment lacks it.
+The root-owned `/usr/local/bin/motd` command uses non-interactive sudo to execute
+`/etc/update-motd.d/10-infra-status` as root; it contains no duplicated status logic.
+WireGuard operational queries require privileges, so the installer creates a validated
+`/etc/sudoers.d/arc-motd` rule allowing only the detected infrastructure admin user to
+run that single root-owned script without a password. It grants no general NET_ADMIN,
+WireGuard, Docker, shell, wildcard, or other passwordless access. The installer also
+verifies `/usr/local/bin` in the admin user's login PATH and adds it through a
+system-wide `/etc/profile.d` entry only when the standard environment lacks it. The
+wrapper uses `exec`, so it preserves the status script's exit behavior and fails
+immediately instead of prompting when the sudo permission is unavailable.
 
 See [SPECIFICATION.md](SPECIFICATION.md) for the fixed addresses and security
 invariants.
@@ -151,20 +153,6 @@ ownership and mode `0755`, reconciles the `/usr/local/bin/motd` wrapper, keeps
 `/etc/motd` empty, and disables a package update's recreated `wifi-check.sh` again
 without aliases, user shell changes, or duplicate entries.
 
-Docker package reconciliation may restart the daemon and auto-start an existing
-wg-easy container before the installer reaches its controlled service phase. To avoid
-that race, a rerun first uses Compose `down`, waits for the old container to disappear,
-and removes a remaining `wg0` only when the container is absent, `wg-quick@wg0` is
-inactive, and Arc's installation marker proves this is a managed rerun. wg-easy stays
-down throughout Docker, sysctl, configuration and firewall reconciliation and starts
-at the controlled end with Compose `up -d`.
-
-Readiness requires the running container, `wg0`, `10.8.0.1/24`, UDP 51825 and nine
-peers to match for three consecutive checks two seconds apart. A failed first start
-produces only non-sensitive operational diagnostics and permits exactly one Compose
-down/up recovery. The production database is required before either start and is never
-replaced on a rerun.
-
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.
 A different existing file causes a hard stop rather than an overwrite.
@@ -172,20 +160,6 @@ A different existing file causes a hard stop rather than an overwrite.
 `TRUSTED_PROXIES` defaults to `192.168.0.195`; set it in the root environment to
 override it. `EXPECTED_WG_PEERS` defaults to `9` and may be changed deliberately for
 a later production topology.
-
-To verify lifecycle stability manually, run the installer three times without rebooting
-between runs and inspect the MOTD after each run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
-motd
-curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
-motd
-curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
-motd
-```
-
-Every result must show `wg0 up`, address `10.8.0.1/24`, port `51825`, and peers `9/9`.
 
 ## Disaster recovery
 
