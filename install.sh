@@ -30,6 +30,10 @@ main() {
   preflight
   detect_install_mode
 
+  if (( ! FIRST_INSTALL )); then
+    quiesce_wg_easy_for_rerun
+  fi
+
   if (( FIRST_INSTALL )); then
     mount_recovery
   fi

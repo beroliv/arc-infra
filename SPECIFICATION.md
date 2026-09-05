@@ -87,18 +87,30 @@ wg-easy uses `ghcr.io/wg-easy/wg-easy:15`, host networking, and:
 
 No Compose `ports:` entries are allowed with host networking.
 
-After all package, sysctl, firewall, Compose and restore reconciliation, the installer
-force-recreates wg-easy. This prevents Docker daemon restarts during a rerun from
-leaving an automatically restarted container with partial WireGuard runtime state.
-Readiness requires the container to be running and `wg0` to have `10.8.0.1/24`, listen
-on UDP 51825 and contain exactly nine peers by default. The entire state must pass three
-consecutive checks two seconds apart within a bounded check count.
+On a managed rerun, before any Docker package operation, the installer uses Compose
+`down` with the existing `/opt/wg-easy/compose.yml` and waits for the wg-easy container
+to disappear. This removes the `restart: unless-stopped` container before Docker or
+containerd can restart during package reconciliation. wg-easy remains down throughout
+package, sysctl, firewall, Compose and data reconciliation. A missing Docker command or
+compose file is a safe no-op at this pre-Docker stage.
+
+If `wg0` remains after the container has disappeared, it may be deleted only on an
+existing installer-managed Arc system and only after confirming
+`wg-quick@wg0.service` is inactive. No other WireGuard interface is touched. On first
+install the quiesce path is never called, and the restored database remains mandatory
+before the first container start.
+
+At the controlled end, the installer validates Compose, pulls the v15 image and uses
+Compose `up -d`. Readiness requires the container to be running and `wg0` to have
+`10.8.0.1/24`, listen on UDP 51825 and contain exactly nine peers by default. The
+entire state must pass three consecutive checks two seconds apart within a bounded
+check count.
 
 If initial readiness fails, the installer prints only container state, interface
-up/down, IPv4 address, listen port and peer count, then performs exactly one additional
-forced recreate and repeats the stable-state check. A second failure aborts. No full
+up/down, IPv4 address, listen port and peer count, then performs exactly one Compose
+down/up recovery and repeats the stable-state check. A second failure aborts. No full
 WireGuard output, peer/public keys, private or preshared keys, database contents, or
-client configuration is logged. Both recreates require the non-empty production
+client configuration is logged. Both start attempts require the non-empty production
 database and never modify it.
 
 ## Host firewall contract

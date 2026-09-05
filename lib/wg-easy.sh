@@ -37,15 +37,15 @@ start_wg_easy() {
   require_file "$WG_EASY_DIR/data/wg-easy.db"
   docker compose -f "$WG_EASY_DIR/compose.yml" config --quiet
   docker compose -f "$WG_EASY_DIR/compose.yml" pull --quiet
-  if reconcile_wg_easy_container && wait_for_wg_easy_stable 30; then
+  if start_wg_easy_container && wait_for_wg_easy_stable 30; then
     success "wg-easy reached stable WireGuard readiness."
     return 0
   fi
 
   warn "wg-easy did not reach the expected WireGuard state; showing safe diagnostics."
   print_wg_easy_diagnostics
-  status "Recreating wg-easy once for recovery..."
-  if reconcile_wg_easy_container && wait_for_wg_easy_stable 30; then
+  status "Performing one controlled wg-easy down/up recovery..."
+  if bring_wg_easy_down && start_wg_easy_container && wait_for_wg_easy_stable 30; then
     success "wg-easy reached stable WireGuard readiness after recovery."
     return 0
   fi
@@ -54,9 +54,80 @@ start_wg_easy() {
   die "wg-easy remained unhealthy after one controlled recovery attempt"
 }
 
-reconcile_wg_easy_container() {
+start_wg_easy_container() {
   require_file "$WG_EASY_DIR/data/wg-easy.db"
-  docker compose -f "$WG_EASY_DIR/compose.yml" up -d --force-recreate
+  docker compose -f "$WG_EASY_DIR/compose.yml" up -d
+}
+
+quiesce_wg_easy_for_rerun() {
+  (( ! FIRST_INSTALL )) || return 0
+  command -v docker >/dev/null 2>&1 || return 0
+  [[ -s "$WG_EASY_DIR/compose.yml" ]] || return 0
+
+  status "Quiescing wg-easy before Docker package reconciliation..."
+  if ! systemctl is-active --quiet docker; then
+    systemctl start docker || die "could not start the existing Docker daemon to quiesce wg-easy"
+  fi
+  docker info >/dev/null 2>&1 || die "Docker daemon is unavailable during wg-easy quiesce"
+  docker compose version >/dev/null 2>&1 || die "Docker Compose is unavailable during wg-easy quiesce"
+
+  local project_container=""
+  project_container="$(docker compose -f "$WG_EASY_DIR/compose.yml" ps -aq wg-easy 2>/dev/null || true)"
+  if [[ -n "$project_container" ]] || docker container inspect wg-easy >/dev/null 2>&1; then
+    bring_wg_easy_down
+  else
+    ensure_wg_easy_container_absent
+    remove_stale_wg0_if_safe
+  fi
+  success "wg-easy is quiescent before Docker reconciliation."
+}
+
+bring_wg_easy_down() {
+  status "Bringing wg-easy down with Docker Compose..."
+  docker compose -f "$WG_EASY_DIR/compose.yml" down
+  ensure_wg_easy_container_absent
+  wait_for_wg0_absent 10 || remove_stale_wg0_if_safe
+}
+
+ensure_wg_easy_container_absent() {
+  local check
+  for (( check=1; check<=30; check++ )); do
+    if ! docker container inspect wg-easy >/dev/null 2>&1; then
+      return 0
+    fi
+    if (( check < 30 )); then
+      sleep 1
+    fi
+  done
+  warn "wg-easy container still exists after Docker Compose down"
+  return 1
+}
+
+wait_for_wg0_absent() {
+  local max_checks="${1:-10}" check
+  for (( check=1; check<=max_checks; check++ )); do
+    if ! ip link show wg0 >/dev/null 2>&1; then
+      return 0
+    fi
+    if (( check < max_checks )); then
+      sleep 1
+    fi
+  done
+  return 1
+}
+
+remove_stale_wg0_if_safe() {
+  ip link show wg0 >/dev/null 2>&1 || return 0
+  ! docker container inspect wg-easy >/dev/null 2>&1 \
+    || die "refusing to remove wg0 while the wg-easy container exists"
+  ! systemctl is-active --quiet 'wg-quick@wg0.service' \
+    || die "refusing to remove wg0 while wg-quick@wg0.service is active"
+  (( ! FIRST_INSTALL )) \
+    || die "wg0 remained after first-install recovery shutdown; refusing to delete it"
+
+  warn "Removing confirmed stale wg0 after wg-easy container shutdown."
+  ip link delete dev wg0
+  ! ip link show wg0 >/dev/null 2>&1 || die "stale wg0 could not be removed"
 }
 
 wg_easy_runtime_ready() {

@@ -41,26 +41,28 @@ to become root first and then export `RECOVERY_UUID` before running the command.
 The ordering is a safety invariant, not merely an implementation detail:
 
 1. Verify Debian 13, arm64, `eth0`, repository files, and the active SSH source.
-2. Locate the ext4 recovery filesystem by UUID (when supplied) or label and mount it
+2. On a rerun, bring wg-easy fully down and remove its container before any Docker
+   package reconciliation.
+3. On a first install, locate the ext4 recovery filesystem by UUID (when supplied) or label and mount it
    read-only at `/mnt/infra-recovery`.
-3. Validate both recovery artifacts before making service changes.
-4. Install Docker Engine and Compose from Docker's official Debian repository.
-5. Configure daily package-list refresh and unattended Debian stable/security updates
+4. Validate both recovery artifacts before making service changes.
+5. Install Docker Engine and Compose from Docker's official Debian repository.
+6. Configure daily package-list refresh and unattended Debian stable/security updates
    without automatic reboots.
-6. Install the repository-managed infrastructure MOTD.
-7. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
-8. Create the `/opt` directories and both production Compose definitions.
-9. Restore AdGuard configuration and the sensitive wg-easy database into their final
+7. Install the repository-managed infrastructure MOTD.
+8. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
+9. Create the `/opt` directories and both production Compose definitions.
+10. Restore AdGuard configuration and the sensitive wg-easy database into their final
    bind mounts.
-10. Validate the restored files again.
-11. Syntax-check and load the host nftables policy.
-12. Start AdGuard and then force-recreate wg-easy from its restored database under a
-    controlled lifecycle.
-13. Require three consecutive complete wg-easy readiness checks, with one bounded
-    recreate recovery attempt if necessary.
-14. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
+11. Validate the restored files again.
+12. Syntax-check and load the host nftables policy.
+13. Start AdGuard and then start wg-easy exactly once with Compose `up -d` from its
+    restored database.
+14. Require three consecutive complete wg-easy readiness checks, with one bounded
+    Compose down/up recovery attempt if necessary.
+15. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
     port and all nine peers.
-15. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
+16. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
     unmount a recovery filesystem mounted by the installer.
 
 wg-easy is never started before `/opt/wg-easy/data/wg-easy.db` is non-empty. It is
@@ -151,13 +153,17 @@ without aliases, user shell changes, or duplicate entries.
 
 Docker package reconciliation may restart the daemon and auto-start an existing
 wg-easy container before the installer reaches its controlled service phase. To avoid
-retaining a partially initialized runtime, every install and rerun uses Compose
-`--force-recreate` after sysctl, firewall, Compose and data reconciliation. Readiness
-requires the running container, `wg0`, `10.8.0.1/24`, UDP 51825 and nine peers to match
-for three consecutive checks two seconds apart. A failed first sequence produces only
-non-sensitive operational diagnostics and permits exactly one additional recreate.
-The production database is required before either attempt and is never replaced on a
-rerun.
+that race, a rerun first uses Compose `down`, waits for the old container to disappear,
+and removes a remaining `wg0` only when the container is absent, `wg-quick@wg0` is
+inactive, and Arc's installation marker proves this is a managed rerun. wg-easy stays
+down throughout Docker, sysctl, configuration and firewall reconciliation and starts
+at the controlled end with Compose `up -d`.
+
+Readiness requires the running container, `wg0`, `10.8.0.1/24`, UDP 51825 and nine
+peers to match for three consecutive checks two seconds apart. A failed first start
+produces only non-sensitive operational diagnostics and permits exactly one Compose
+down/up recovery. The production database is required before either start and is never
+replaced on a rerun.
 
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.
@@ -166,6 +172,20 @@ A different existing file causes a hard stop rather than an overwrite.
 `TRUSTED_PROXIES` defaults to `192.168.0.195`; set it in the root environment to
 override it. `EXPECTED_WG_PEERS` defaults to `9` and may be changed deliberately for
 a later production topology.
+
+To verify lifecycle stability manually, run the installer three times without rebooting
+between runs and inspect the MOTD after each run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
+motd
+curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
+motd
+curl -fsSL https://raw.githubusercontent.com/beroliv/arc-infra/main/bootstrap.sh | sudo bash
+motd
+```
+
+Every result must show `wg0 up`, address `10.8.0.1/24`, port `51825`, and peers `9/9`.
 
 ## Disaster recovery
 
