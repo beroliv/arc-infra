@@ -87,6 +87,7 @@ validate_installation() {
   systemctl is-active --quiet nftables || die "nftables is not active"
   systemctl is-enabled --quiet nftables || die "nftables is not enabled"
   validate_unattended_upgrades
+  validate_motd
   validate_firewall
   ip -4 -o address show dev wg0 | grep -Fq "inet $WG_ADDRESS" || die "wg0 does not have $WG_ADDRESS"
 
@@ -107,5 +108,5 @@ validate_installation() {
   ! systemctl is-enabled --quiet 'wg-quick@wg0.service' 2>/dev/null || die "wg-quick@wg0.service is still enabled"
   require_file "$WG_EASY_DIR/data/wg-easy.db"
 
-  success "Docker, unattended upgrades, nftables policy, AdGuard, wg-easy, WireGuard ($peer_count peers), HTTP and DNS validated."
+  success "Docker, unattended upgrades, MOTD, nftables policy, AdGuard, wg-easy, WireGuard ($peer_count peers), HTTP and DNS validated."
 }

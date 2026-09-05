@@ -11,6 +11,8 @@ source "$SOURCE_DIR/lib/preflight.sh"
 source "$SOURCE_DIR/lib/docker.sh"
 # shellcheck source=lib/upgrades.sh
 source "$SOURCE_DIR/lib/upgrades.sh"
+# shellcheck source=lib/motd.sh
+source "$SOURCE_DIR/lib/motd.sh"
 # shellcheck source=lib/restore.sh
 source "$SOURCE_DIR/lib/restore.sh"
 # shellcheck source=lib/adguard.sh
@@ -34,6 +36,7 @@ main() {
 
   install_docker
   configure_unattended_upgrades
+  install_motd
   configure_sysctl
   disable_legacy_wireguard_service
   prepare_service_directories

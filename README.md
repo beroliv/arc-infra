@@ -47,16 +47,17 @@ The ordering is a safety invariant, not merely an implementation detail:
 4. Install Docker Engine and Compose from Docker's official Debian repository.
 5. Configure daily package-list refresh and unattended Debian stable/security updates
    without automatic reboots.
-6. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
-7. Create the `/opt` directories and both production Compose definitions.
-8. Restore AdGuard configuration and the sensitive wg-easy database into their final
+6. Install the repository-managed infrastructure MOTD.
+7. Persist forwarding sysctls and disable/mask legacy `wg-quick@wg0.service`.
+8. Create the `/opt` directories and both production Compose definitions.
+9. Restore AdGuard configuration and the sensitive wg-easy database into their final
    bind mounts.
-9. Validate the restored files again.
-10. Syntax-check and load the host nftables policy.
-11. Start AdGuard and only then start wg-easy from its restored database.
-12. Validate upgrades, firewall rules, containers, sockets, DNS, HTTP, `wg0`, port and
-    all nine peers.
-13. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
+10. Validate the restored files again.
+11. Syntax-check and load the host nftables policy.
+12. Start AdGuard and only then start wg-easy from its restored database.
+13. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
+    port and all nine peers.
+14. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
     unmount a recovery filesystem mounted by the installer.
 
 wg-easy is never started before `/opt/wg-easy/data/wg-easy.db` is non-empty. It is
@@ -91,6 +92,20 @@ Arc installs Debian stable and security updates automatically through
 reboots are explicitly disabled, so kernel or other reboot-requiring updates remain
 pending until an administrator deliberately reboots Arc.
 
+## Login status
+
+Interactive SSH and console logins automatically show the repository-managed
+`/etc/update-motd.d/10-infra-status`. The compact status page reports hostname,
+uptime, load, disk, RAM, Raspberry Pi temperature when available, the three managed
+host services, the two expected Docker containers, and non-sensitive `wg0` state.
+
+Because unattended upgrades never reboot Arc automatically, the MOTD prominently
+shows `required` whenever `/run/reboot-required` exists. Otherwise it shows
+`not required`. WireGuard reporting is limited to interface state, expected address,
+listen port, and peer count; no keys, peer configurations, environment variables, or
+container configuration are displayed. The script performs no network calls and
+degrades cleanly when an optional command or service is unavailable.
+
 See [SPECIFICATION.md](SPECIFICATION.md) for the fixed addresses and security
 invariants.
 
@@ -100,7 +115,8 @@ Run the same one-line command again. When `/opt/arc-infra/.installed` exists, th
 installer requires the existing AdGuard YAML and wg-easy database and preserves both.
 It does not require or copy from the recovery filesystem, regenerate identities, or
 delete service state. It reconciles packages, Compose definitions, sysctl, firewall,
-containers and validations.
+the repository MOTD, containers and validations. A rerun replaces the installed MOTD
+when the repository version changes and reasserts root ownership and mode `0755`.
 
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.
@@ -153,6 +169,7 @@ edit Docker-managed tables.
 ## Repository layout
 
 ```text
+10-infra-status
 bootstrap.sh
 install.sh
 lib/
@@ -160,6 +177,7 @@ lib/
   common.sh
   docker.sh
   firewall.sh
+  motd.sh
   preflight.sh
   restore.sh
   upgrades.sh

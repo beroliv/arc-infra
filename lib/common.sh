@@ -65,6 +65,7 @@ persist_installer_snapshot() {
   local target="$ARC_STATE_DIR/source"
   install -d -m 0755 "$target" "$target/lib"
   install -m 0755 "$SOURCE_DIR/bootstrap.sh" "$SOURCE_DIR/install.sh" "$target/"
+  install -m 0755 "$SOURCE_DIR/10-infra-status" "$target/"
   install -m 0644 "$SOURCE_DIR"/lib/*.sh "$target/lib/"
   install -m 0644 "$SOURCE_DIR/README.md" "$SOURCE_DIR/SPECIFICATION.md" "$target/"
 }

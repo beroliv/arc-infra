@@ -47,6 +47,8 @@ Nova and is out of scope.
 9. Sensitive database contents, private keys, preshared keys and client configs are
    never printed by installation or validation.
 10. Existing production data is never silently overwritten.
+11. Login status is local-only and never emits WireGuard key material or makes network
+    calls.
 
 ## Recovery contract
 
@@ -117,6 +119,26 @@ origins to the current Debian stable and security suites and explicitly sets
 `Unattended-Upgrade::Automatic-Reboot "false";`. Reconciliation replaces these managed
 files instead of appending duplicate entries.
 
+## Infrastructure MOTD
+
+The repository file `10-infra-status` is installed as the root-owned executable
+`/etc/update-motd.d/10-infra-status`. It is reconciled on every first installation and
+rerun without changing unrelated Debian MOTD entries. An interactive login displays:
+
+- the current hostname, owner and repository management notice;
+- uptime, load and `/run/reboot-required` state;
+- root filesystem utilization, RAM and Raspberry Pi temperature when available;
+- systemd state for Docker, nftables and unattended-upgrades;
+- actual state/status for exactly the `adguard` and `wg-easy` containers; and
+- `wg0` interface state, address, listen port and peer count against expected values.
+
+Disk status is yellow from 80% and red from 90%. Temperature is yellow from 60°C and
+red from 75°C. Temperature detection prefers `vcgencmd` and falls back to Linux's
+thermal sysfs. Missing optional commands, services or interfaces produce a concise
+unavailable/not-installed state and never fail login. The script has no network checks
+and only invokes WireGuard subcommands that return the listen port or peer identifiers
+for counting; it never prints their output or any key.
+
 ## Persistent kernel configuration
 
 `/etc/sysctl.d/90-wireguard.conf` enables:
@@ -132,8 +154,9 @@ IPv6 interface address if it expects one.
 ## Successful-install criteria
 
 Installation succeeds only when Docker and nftables are active and enabled, unattended
-upgrades and package refresh are enabled without automatic reboot, the effective
-firewall contains the required ordered input/forward/NAT policy, both containers run,
+upgrades and package refresh are enabled without automatic reboot, the installed MOTD
+matches the repository version, is executable, root-owned and exits successfully, the
+effective firewall contains the required ordered input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
 default, TCP 51821 and TCP/UDP 53 listen, wg-easy returns a local HTTP response, a local
 DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is not enabled, and

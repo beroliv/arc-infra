@@ -12,8 +12,8 @@ preflight() {
 
   local required
   for required in \
-    bootstrap.sh install.sh README.md SPECIFICATION.md \
-    lib/common.sh lib/preflight.sh lib/docker.sh lib/upgrades.sh lib/restore.sh \
+    bootstrap.sh install.sh 10-infra-status README.md SPECIFICATION.md \
+    lib/common.sh lib/preflight.sh lib/docker.sh lib/upgrades.sh lib/motd.sh lib/restore.sh \
     lib/adguard.sh lib/wg-easy.sh lib/firewall.sh lib/validate.sh; do
     require_file "$SOURCE_DIR/$required"
   done

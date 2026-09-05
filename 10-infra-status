@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+
+# Repository-managed Arc login status. Optional checks must never block login.
+
+C_RESET=$'\e[0m'
+C_DIM=$'\e[2m'
+C_BOLD=$'\e[1m'
+C_CYAN=$'\e[36m'
+C_GREEN=$'\e[32m'
+C_YELLOW=$'\e[33m'
+C_RED=$'\e[31m'
+
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+get_temp_c() {
+  local value=""
+  if have_cmd vcgencmd; then
+    value="$(vcgencmd measure_temp 2>/dev/null | sed "s/temp=//;s/'C//" || true)"
+  fi
+  if [[ -z "$value" && -r /sys/class/thermal/thermal_zone0/temp ]]; then
+    value="$(awk '{printf "%.1f\n", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || true)"
+  fi
+  printf '%s\n' "$value"
+}
+
+to_tenths() {
+  local value="$1" integer fraction="0"
+  integer="${value%%.*}"
+  [[ "$value" == *.* ]] && fraction="${value#*.}" && fraction="${fraction:0:1}"
+  integer="${integer//[^0-9]/}"
+  fraction="${fraction//[^0-9]/}"
+  [[ -n "$integer" ]] || return 1
+  printf '%s\n' "$((10 * integer + ${fraction:-0}))"
+}
+
+print_service() {
+  local service="$1" unit="${1}.service"
+  if ! have_cmd systemctl || ! systemctl cat "$unit" >/dev/null 2>&1; then
+    printf '  %s○%s %-24s %12s\n' "$C_DIM" "$C_RESET" "$service" "not installed"
+  elif systemctl is-active --quiet "$unit" 2>/dev/null; then
+    printf '  %s●%s %-24s %12s\n' "$C_GREEN" "$C_RESET" "$service" "running"
+  else
+    printf '  %s○%s %-24s %12s\n' "$C_YELLOW" "$C_RESET" "$service" "stopped"
+  fi
+}
+
+print_container() {
+  local name="$1" state status
+  state="$(docker ps -a --filter "name=^/${name}$" --format '{{.State}}|{{.Status}}' 2>/dev/null | head -n1 || true)"
+  if [[ -z "$state" ]]; then
+    printf '   %s○%s %-22s %s%s%s\n' "$C_DIM" "$C_RESET" "$name" "$C_DIM" "not present" "$C_RESET"
+  elif [[ "${state%%|*}" == "running" ]]; then
+    status="${state#*|}"
+    printf '   %s●%s %-22s %s%s%s\n' "$C_GREEN" "$C_RESET" "$name" "$C_DIM" "$status" "$C_RESET"
+  else
+    status="${state#*|}"
+    printf '   %s○%s %-22s %s%s%s\n' "$C_RED" "$C_RESET" "$name" "$C_DIM" "$status" "$C_RESET"
+  fi
+}
+
+echo
+echo "${C_CYAN}${C_BOLD}╭────────────────────────────────────────────╮${C_RESET}"
+printf "${C_CYAN}${C_BOLD}│ %-42s │${C_RESET}\n" "Raspberry Infrastructure Node"
+echo "${C_CYAN}${C_BOLD}╰────────────────────────────────────────────╯${C_RESET}"
+
+printf '%s Host:%s     %s\n' "$C_DIM" "$C_RESET" "$(hostname 2>/dev/null || echo unknown)"
+printf '%s Owner:%s    Oliver Bertrand\n' "$C_DIM" "$C_RESET"
+printf '%s Managed:%s  arc-infra.git (manual changes discouraged)\n' "$C_DIM" "$C_RESET"
+
+echo
+echo "${C_RED}${C_BOLD}System${C_RESET}"
+printf '  Uptime:  %s\n' "$(uptime -p 2>/dev/null || echo unavailable)"
+if [[ -r /proc/loadavg ]]; then
+  printf '  Load:    %s\n' "$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo unavailable)"
+else
+  printf '  Load:    unavailable\n'
+fi
+if [[ -e /run/reboot-required ]]; then
+  echo "  Reboot:  ${C_YELLOW}required${C_RESET}"
+else
+  echo "  Reboot:  ${C_GREEN}not required${C_RESET}"
+fi
+
+echo
+echo "${C_RED}${C_BOLD}Resources${C_RESET}"
+if have_cmd df; then
+  read -r disk_total disk_used disk_percent < <(df -hP / 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $2, $3, $5}' || true)
+  if [[ "${disk_percent:-}" =~ ^[0-9]+$ ]]; then
+    disk_color="$C_GREEN"
+    (( disk_percent >= 90 )) && disk_color="$C_RED"
+    (( disk_percent >= 80 && disk_percent < 90 )) && disk_color="$C_YELLOW"
+    echo "  Disk:    ${disk_used}/${disk_total} (${disk_color}${disk_percent}%${C_RESET})"
+  else
+    echo "  Disk:    unavailable"
+  fi
+fi
+if have_cmd free; then
+  ram="$(free -h 2>/dev/null | awk '/^Mem:/ {print $3 "/" $2}' || true)"
+  printf '  RAM:     %s\n' "${ram:-unavailable}"
+fi
+
+temperature="$(get_temp_c)"
+if [[ -n "$temperature" ]] && temperature_tenths="$(to_tenths "$temperature")"; then
+  temperature_color="$C_GREEN"
+  (( temperature_tenths >= 750 )) && temperature_color="$C_RED"
+  (( temperature_tenths >= 600 && temperature_tenths < 750 )) && temperature_color="$C_YELLOW"
+  echo "  Temp:    ${temperature_color}${temperature}°C${C_RESET}"
+fi
+
+echo
+echo "${C_RED}${C_BOLD}Services${C_RESET}"
+for service in docker nftables unattended-upgrades; do
+  print_service "$service"
+done
+
+echo
+echo "${C_RED}${C_BOLD}Docker${C_RESET}"
+containers=(adguard wg-easy)
+running=0
+if have_cmd docker && docker info >/dev/null 2>&1; then
+  for container in "${containers[@]}"; do
+    [[ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]] \
+      && running=$((running + 1))
+  done
+  echo "  Containers: ${running}/2 running"
+  for container in "${containers[@]}"; do
+    print_container "$container"
+  done
+else
+  echo "  Containers: 0/2 running (Docker unavailable)"
+  for container in "${containers[@]}"; do
+    printf '   %s○%s %-22s %s%s%s\n' "$C_DIM" "$C_RESET" "$container" "$C_DIM" "not available" "$C_RESET"
+  done
+fi
+
+echo
+echo "${C_RED}${C_BOLD}WireGuard${C_RESET}"
+if have_cmd ip && ip link show wg0 >/dev/null 2>&1; then
+  echo "  Interface:  ${C_GREEN}wg0 up${C_RESET}"
+  wg_address="$(ip -4 -o address show dev wg0 2>/dev/null | awk '{print $4}' | head -n1 || true)"
+  if [[ "$wg_address" == "10.8.0.1/24" ]]; then
+    echo "  Address:    ${C_GREEN}${wg_address}${C_RESET}"
+  else
+    echo "  Address:    ${C_YELLOW}${wg_address:-unavailable} (expected 10.8.0.1/24)${C_RESET}"
+  fi
+
+  if have_cmd wg; then
+    wg_port="$(wg show wg0 listen-port 2>/dev/null || true)"
+    peer_count="$(wg show wg0 peers 2>/dev/null | awk 'NF {count++} END {print count+0}' || true)"
+    if [[ "$wg_port" == "51825" ]]; then
+      echo "  Port:       ${C_GREEN}${wg_port}${C_RESET}"
+    else
+      echo "  Port:       ${C_YELLOW}${wg_port:-unavailable} (expected 51825)${C_RESET}"
+    fi
+    if [[ "$peer_count" == "9" ]]; then
+      echo "  Peers:      ${C_GREEN}${peer_count}/9${C_RESET}"
+    else
+      echo "  Peers:      ${C_YELLOW}${peer_count:-0}/9${C_RESET}"
+    fi
+  else
+    echo "  Port:       ${C_DIM}unavailable${C_RESET}"
+    echo "  Peers:      ${C_DIM}unavailable${C_RESET}"
+  fi
+else
+  echo "  Interface:  ${C_RED}wg0 down${C_RESET}"
+  echo "  Address:    ${C_DIM}unavailable${C_RESET}"
+  echo "  Port:       ${C_DIM}unavailable${C_RESET}"
+  echo "  Peers:      ${C_DIM}unavailable${C_RESET}"
+fi
+
+echo
+exit 0
