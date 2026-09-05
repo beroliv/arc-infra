@@ -50,6 +50,8 @@ Nova and is out of scope.
 10. Existing production data is never silently overwritten.
 11. Login status is local-only and never emits WireGuard key material or makes network
     calls.
+12. A container being merely running is insufficient wg-easy readiness: the expected
+    interface address, listen port and peer count must be stable.
 
 ## Recovery contract
 
@@ -84,6 +86,20 @@ wg-easy uses `ghcr.io/wg-easy/wg-easy:15`, host networking, and:
 - `/lib/modules:/lib/modules:ro`
 
 No Compose `ports:` entries are allowed with host networking.
+
+After all package, sysctl, firewall, Compose and restore reconciliation, the installer
+force-recreates wg-easy. This prevents Docker daemon restarts during a rerun from
+leaving an automatically restarted container with partial WireGuard runtime state.
+Readiness requires the container to be running and `wg0` to have `10.8.0.1/24`, listen
+on UDP 51825 and contain exactly nine peers by default. The entire state must pass three
+consecutive checks two seconds apart within a bounded check count.
+
+If initial readiness fails, the installer prints only container state, interface
+up/down, IPv4 address, listen port and peer count, then performs exactly one additional
+forced recreate and repeats the stable-state check. A second failure aborts. No full
+WireGuard output, peer/public keys, private or preshared keys, database contents, or
+client configuration is logged. Both recreates require the non-empty production
+database and never modify it.
 
 ## Host firewall contract
 
@@ -182,7 +198,8 @@ admin login PATH, the static MOTD is empty, the Pi Wi-Fi warning script is disab
 PAM dynamic MOTD and OpenSSH Last login remain enabled, the effective firewall contains
 the required ordered input/forward/NAT policy, both containers run,
 `wg0` has `10.8.0.1/24`, WireGuard listens on UDP 51825, exactly nine peers exist by
-default, TCP 51821, TCP 3000 and TCP/UDP 53 listen, the effective `arc_filter` input
-chain contains exactly one LAN-scoped TCP 3000 accept rule and no global equivalent,
-wg-easy returns a local HTTP response, a local DNS query succeeds, port 5335 is unused,
-the legacy wg-quick unit is not enabled, and the restored database remains non-empty.
+default, and that complete state passes three consecutive checks. TCP 51821, TCP 3000
+and TCP/UDP 53 listen, the effective `arc_filter` input chain contains exactly one
+LAN-scoped TCP 3000 accept rule and no global equivalent, wg-easy returns a local HTTP
+response, a local DNS query succeeds, port 5335 is unused, the legacy wg-quick unit is
+not enabled, and the restored database remains non-empty.

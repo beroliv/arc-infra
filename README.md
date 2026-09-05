@@ -54,10 +54,13 @@ The ordering is a safety invariant, not merely an implementation detail:
    bind mounts.
 10. Validate the restored files again.
 11. Syntax-check and load the host nftables policy.
-12. Start AdGuard and only then start wg-easy from its restored database.
-13. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
+12. Start AdGuard and then force-recreate wg-easy from its restored database under a
+    controlled lifecycle.
+13. Require three consecutive complete wg-easy readiness checks, with one bounded
+    recreate recovery attempt if necessary.
+14. Validate upgrades, MOTD, firewall rules, containers, sockets, DNS, HTTP, `wg0`,
     port and all nine peers.
-14. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
+15. Save the installer snapshot, write `/opt/arc-infra/.installed`, and cleanly
     unmount a recovery filesystem mounted by the installer.
 
 wg-easy is never started before `/opt/wg-easy/data/wg-easy.db` is non-empty. It is
@@ -145,6 +148,16 @@ replaces the installed MOTD when the repository version changes, reasserts root
 ownership and mode `0755`, reconciles the `/usr/local/bin/motd` wrapper, keeps
 `/etc/motd` empty, and disables a package update's recreated `wifi-check.sh` again
 without aliases, user shell changes, or duplicate entries.
+
+Docker package reconciliation may restart the daemon and auto-start an existing
+wg-easy container before the installer reaches its controlled service phase. To avoid
+retaining a partially initialized runtime, every install and rerun uses Compose
+`--force-recreate` after sysctl, firewall, Compose and data reconciliation. Readiness
+requires the running container, `wg0`, `10.8.0.1/24`, UDP 51825 and nine peers to match
+for three consecutive checks two seconds apart. A failed first sequence produces only
+non-sensitive operational diagnostics and permits exactly one additional recreate.
+The production database is required before either attempt and is never replaced on a
+rerun.
 
 If a first run stopped after restoring a file but before writing the marker, the next
 run accepts that target only when it is byte-for-byte identical to the recovery copy.

@@ -84,8 +84,7 @@ validate_firewall() {
 validate_installation() {
   status "Waiting for services and running read-only validation..."
   retry 30 2 container_running adguard || die "AdGuard container is not running"
-  retry 30 2 container_running wg-easy || die "wg-easy container is not running"
-  retry 30 2 ip link show wg0 >/dev/null 2>&1 || die "wg0 was not created"
+  wait_for_wg_easy_stable 15 || die "wg-easy lost stable WireGuard readiness before final validation"
 
   systemctl is-active --quiet docker || die "Docker is not active"
   systemctl is-enabled --quiet docker || die "Docker is not enabled"
@@ -94,8 +93,6 @@ validate_installation() {
   validate_unattended_upgrades
   validate_motd
   validate_firewall
-  ip -4 -o address show dev wg0 | grep -Fq "inet $WG_ADDRESS" || die "wg0 does not have $WG_ADDRESS"
-
   local listen_port peer_count
   listen_port="$(wg show wg0 listen-port)"
   [[ "$listen_port" == "$WG_PORT" ]] || die "wg0 listens on unexpected UDP port $listen_port"
