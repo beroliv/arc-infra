@@ -4,7 +4,7 @@ install_motd() {
   local source="$SOURCE_DIR/10-infra-status"
   local target="/etc/update-motd.d/10-infra-status"
   require_file "$source"
-  status "Installing Arc infrastructure login status..."
+  status "Installing infrastructure login status..."
   install -d -o root -g root -m 0755 /etc/update-motd.d
   if [[ ! -e "$target" ]] || ! cmp --silent -- "$source" "$target"; then
     install -o root -g root -m 0755 -- "$source" "$target"
@@ -40,10 +40,10 @@ EOF
 install_motd_sudoers() {
   local admin_user candidate target="/etc/sudoers.d/arc-motd"
   command -v sudo >/dev/null 2>&1 || die "sudo is required for the manual motd command"
-  command -v visudo >/dev/null 2>&1 || die "visudo is required to validate the Arc MOTD permission"
+  command -v visudo >/dev/null 2>&1 || die "visudo is required to validate the MOTD permission"
   admin_user="$(find_admin_user)"
   [[ "$admin_user" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]] \
-    || die "could not identify a safe admin username for the Arc MOTD permission"
+    || die "could not identify a safe admin username for the MOTD permission"
 
   candidate="$(mktemp)"
   printf '%s ALL=(root) NOPASSWD: /etc/update-motd.d/10-infra-status\n' \
@@ -51,13 +51,13 @@ install_motd_sudoers() {
   chmod 0440 "$candidate"
   if ! visudo -cf "$candidate" >/dev/null; then
     rm -f -- "$candidate"
-    die "generated Arc MOTD sudoers rule is invalid"
+    die "generated MOTD sudoers rule is invalid"
   fi
 
   install -d -o root -g root -m 0755 /etc/sudoers.d
   install -o root -g root -m 0440 -- "$candidate" "$target"
   rm -f -- "$candidate"
-  visudo -cf "$target" >/dev/null || die "installed Arc MOTD sudoers rule is invalid"
+  visudo -cf "$target" >/dev/null || die "installed MOTD sudoers rule is invalid"
 }
 
 find_admin_user() {
@@ -130,27 +130,27 @@ validate_motd() {
   local command_target="/usr/local/bin/motd"
   local sudoers_target="/etc/sudoers.d/arc-motd"
   local admin_user login_path manual_output plain_output expected_sudoers
-  [[ -x "$target" ]] || die "Arc MOTD is missing or not executable"
+  [[ -x "$target" ]] || die "infrastructure MOTD is missing or not executable"
   [[ "$(stat -c '%U:%G:%a' "$target")" == "root:root:755" ]] \
-    || die "Arc MOTD ownership or permissions are incorrect"
-  cmp --silent -- "$source" "$target" || die "installed Arc MOTD differs from repository version"
-  "$target" >/dev/null 2>&1 || die "Arc MOTD does not execute successfully"
+    || die "infrastructure MOTD ownership or permissions are incorrect"
+  cmp --silent -- "$source" "$target" || die "installed MOTD differs from repository version"
+  "$target" >/dev/null 2>&1 || die "infrastructure MOTD does not execute successfully"
   [[ -x "$command_target" ]] || die "system-wide motd command is missing or not executable"
   [[ "$(stat -c '%U:%G:%a' "$command_target")" == "root:root:755" ]] \
     || die "system-wide motd command ownership or permissions are incorrect"
   printf '%s\n' '#!/usr/bin/env bash' 'exec sudo -n /etc/update-motd.d/10-infra-status' \
     | cmp --silent -- - "$command_target" \
-    || die "system-wide motd command does not invoke the Arc MOTD"
+    || die "system-wide motd command does not invoke the infrastructure MOTD"
   admin_user="$(find_admin_user)"
   [[ -n "$admin_user" ]] || die "could not identify a normal admin user for login PATH validation"
   expected_sudoers="$admin_user ALL=(root) NOPASSWD: /etc/update-motd.d/10-infra-status"
   [[ "$(stat -c '%U:%G:%a' "$sudoers_target")" == "root:root:440" ]] \
-    || die "Arc MOTD sudoers ownership or permissions are incorrect"
+    || die "MOTD sudoers ownership or permissions are incorrect"
   grep -Fqx -- "$expected_sudoers" "$sudoers_target" \
-    || die "Arc MOTD sudoers permission is not narrowly scoped to the admin user"
-  visudo -cf "$sudoers_target" >/dev/null || die "Arc MOTD sudoers permission is invalid"
+    || die "MOTD sudoers permission is not narrowly scoped to the admin user"
+  visudo -cf "$sudoers_target" >/dev/null || die "MOTD sudoers permission is invalid"
   runuser -u "$admin_user" -- sudo -n "$target" >/dev/null 2>&1 \
-    || die "admin cannot execute the Arc MOTD through non-interactive sudo"
+    || die "admin cannot execute the infrastructure MOTD through non-interactive sudo"
   if ! manual_output="$(runuser -u "$admin_user" -- "$command_target" 2>/dev/null)"; then
     die "manual motd command failed for $admin_user"
   fi

@@ -50,7 +50,7 @@ main() {
 
   unmount_recovery
   trap - EXIT
-  success "Arc infrastructure installation complete."
+  success "Infrastructure installation complete."
 }
 
 main "$@"

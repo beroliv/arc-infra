@@ -110,7 +110,7 @@ validate_installation() {
   ss -H -lun "sport = :53" | grep -q . || die "UDP 53 is not listening"
   ! ss -H -lntu | awk '{print $5}' | grep -Eq '(^|[.:])5335$' || die "a service is unexpectedly listening on port 5335"
   retry 30 2 http_ready || die "wg-easy UI did not return an HTTP response"
-  retry 30 2 dns_ready || die "DNS query against Arc failed"
+  retry 30 2 dns_ready || die "local DNS query failed"
   ! systemctl is-enabled --quiet 'wg-quick@wg0.service' 2>/dev/null || die "wg-quick@wg0.service is still enabled"
   require_file "$WG_EASY_DIR/data/wg-easy.db"
 
