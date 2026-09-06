@@ -21,7 +21,7 @@ command -v tar >/dev/null 2>&1 || {
 work_dir="$(mktemp -d /tmp/arc-infra.XXXXXXXX)"
 trap 'rm -rf -- "$work_dir"' EXIT
 
-printf '[arc] Downloading installer...\n'
+printf 'Downloading installer...\n'
 curl --fail --silent --show-error --location "$ARCHIVE_URL" \
   | tar --extract --gzip --directory "$work_dir" --strip-components=1
 

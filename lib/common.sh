@@ -20,17 +20,17 @@ readonly WG_UI_PORT="51821"
 FIRST_INSTALL=0
 RECOVERY_MOUNTED_BY_INSTALLER=0
 
-status() { printf '[arc] %s\n' "$*"; }
-success() { printf '[arc] OK: %s\n' "$*"; }
-warn() { printf '[arc] WARNING: %s\n' "$*" >&2; }
-die() { printf '[arc] ERROR: %s\n' "$*" >&2; exit 1; }
+status() { printf '%s\n' "$*"; }
+success() { printf 'OK: %s\n' "$*"; }
+warn() { printf 'WARNING: %s\n' "$*" >&2; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 require_root() {
   (( EUID == 0 )) || die "installer must run as root"
 }
 
 install_error_trap() {
-  trap 'rc=$?; printf "[arc] ERROR: installation failed at line %s (exit %s).\n" "$LINENO" "$rc" >&2; unmount_recovery || true; exit "$rc"' ERR
+  trap 'rc=$?; printf "ERROR: installation failed at line %s (exit %s).\n" "$LINENO" "$rc" >&2; unmount_recovery || true; exit "$rc"' ERR
   trap 'unmount_recovery || true' EXIT
 }
 
